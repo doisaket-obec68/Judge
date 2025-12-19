@@ -1,10 +1,293 @@
 <!DOCTYPE html>
 <html>
-   <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-      <base target="_top">
-   </head>
-   <body>
-      <iframe style="position: absolute;top: 0;left: 0;width: 100%;height: 100%;border: 0;" src="https://script.google.com/a/macros/cpt.ac.th/s/AKfycbzB1P4dNUfI5b74m667jx-yTFrNmFBpzPfDvDX8m4i7KdjsoNxzK2E62aqoV9Nzdot7tw/exec"></iframe>
-   </body>
+  <head>
+    <base target="_top">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+      body { font-family: 'Sarabun', sans-serif; background-color: #f8f9fa; }
+      .container { max-width: 700px; margin-top: 30px; }
+      .card-header { background: linear-gradient(45deg, #0d6efd, #0dcaf0); color: white; }
+      .preview-img { max-width: 150px; max-height: 200px; margin-top: 15px; border-radius: 8px; border: 2px solid #ddd; display: none; object-fit: cover; }
+      .form-select:disabled { background-color: #e9ecef; cursor: not-allowed; }
+      .loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; }
+    </style>
+  </head>
+  <body>
+
+    <div id="loadingOverlay" class="loading-overlay">
+      <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+      <h5 class="mt-3 text-primary fw-bold">กำลังสร้างไฟล์ PDF...</h5>
+      <p class="text-muted">กำลังอัปโหลดรูปและบันทึกข้อมูล</p>
+    </div>
+
+    <div class="container mb-5">
+      <div class="card shadow">
+        <div class="card-header text-center py-3">
+          <h4 class="mb-0 fw-bold">🪪 ระบบพิมพ์บัตรประจำตัวกรรมการตัดสิน</h4>
+          <small>งานศิลปหัตถกรรมนักเรียน (ระดับอำเภอดอยสะเก็ด)</small>
+        </div>
+        <div class="card-body p-4">
+
+          <div id="dataStatus" class="alert alert-info text-center">
+            <span class="spinner-border spinner-border-sm" role="status"></span> กำลังโหลดรายชื่อ...
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold">1. เลือกโรงเรียน</label>
+            <select id="selSchool" class="form-select" onchange="onSelectSchool()" disabled><option value="">-- รอโหลดข้อมูล --</option></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">2. เลือกกลุ่มสาระ/รายวิชา</label>
+            <select id="selSubject" class="form-select" onchange="onSelectSubject()" disabled><option value="">-- กรุณาเลือกโรงเรียนก่อน --</option></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">3. เลือกรายการแข่งขัน</label>
+            <select id="selActivity" class="form-select" onchange="onSelectActivity()" disabled><option value="">-- กรุณาเลือกกลุ่มสาระก่อน --</option></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold">4. เลือกชื่อ-สกุล ครู</label>
+            <select id="selStudent" class="form-select text-primary fw-bold" onchange="onSelectStudent()" disabled><option value="">-- กรุณาเลือกรายการแข่งขันก่อน --</option></select>
+          </div>
+
+          <hr class="my-4">
+
+          <div class="mb-4 text-center">
+            <label class="form-label fw-bold d-block">📸 รูปภาพครู</label>
+            
+            <div id="existingImgAlert" class="alert alert-success py-1 px-2 d-inline-block small" style="display:none;">
+              <i class="bi bi-check-circle-fill"></i> พบรูปในระบบแล้ว (ไม่ต้องอัปใหม่ก็ได้)
+            </div>
+
+            <input type="file" class="form-control mt-2" id="photoFile" accept="image/*" onchange="previewNewImage()">
+            
+            <br>
+            <img id="imgPreview" class="preview-img shadow-sm" />
+            
+            <input type="hidden" id="existingImageUrl">
+          </div>
+
+          <div class="d-grid gap-2">
+            <button id="btnSubmit" class="btn btn-primary btn-lg" onclick="submitForm()" disabled>
+              <i class="bi bi-printer-fill"></i> สร้างบัตรประจำตัว
+            </button>
+          </div>
+
+          <div id="resultArea" class="mt-4 text-center" style="display:none;">
+            <div class="alert alert-success">
+              <h5 class="fw-bold">✅ สร้างบัตรสำเร็จ!</h5>
+              <a id="downloadLink" href="#" target="_blank" class="btn btn-success mt-2 px-4">ดาวน์โหลด PDF</a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let allData = [];
+
+      window.onload = function() {
+        google.script.run.withSuccessHandler(function(response) {
+          if (response.status === 'success') {
+            let rawData = response.data;
+            if (rawData.length > 1) {
+              rawData.shift(); 
+              allData = rawData; 
+              initSchoolDropdown();
+              document.getElementById('dataStatus').style.display = 'none';
+            } else {
+              showError('ไม่พบข้อมูลในตาราง');
+            }
+          } else {
+            showError('เกิดข้อผิดพลาด: ' + response.message);
+          }
+        }).getStudentList();
+      };
+
+      function showError(msg) {
+        let statusDiv = document.getElementById('dataStatus');
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.innerHTML = '❌ ' + msg;
+      }
+
+      // --- Logic Cascading Dropdown ---
+      function initSchoolDropdown() {
+        const schools = [...new Set(allData.map(row => row[2]))].sort();
+        populateSelect('selSchool', schools, 'เลือกโรงเรียน');
+      }
+
+      function onSelectSchool() {
+        const selectedSchool = document.getElementById('selSchool').value;
+        resetSelect('selSubject', 'เลือกกลุ่มสาระ'); resetSelect('selActivity', 'รอเลือกกลุ่มสาระ'); resetSelect('selStudent', 'รอเลือกรายการแข่งขัน');
+        clearImagePreview(); // เคลียร์รูป
+        if (selectedSchool) {
+          const filtered = allData.filter(row => row[2] === selectedSchool);
+          const subjects = [...new Set(filtered.map(row => row[0]))].sort();
+          populateSelect('selSubject', subjects, 'เลือกกลุ่มสาระ');
+        }
+      }
+
+      function onSelectSubject() {
+        const selectedSchool = document.getElementById('selSchool').value;
+        const selectedSubject = document.getElementById('selSubject').value;
+        resetSelect('selActivity', 'เลือกรายการแข่งขัน'); resetSelect('selStudent', 'รอเลือกรายการแข่งขัน');
+        clearImagePreview(); // เคลียร์รูป
+        if (selectedSubject) {
+          const filtered = allData.filter(row => row[2] === selectedSchool && row[0] === selectedSubject);
+          const activities = [...new Set(filtered.map(row => row[1]))].sort();
+          populateSelect('selActivity', activities, 'เลือกรายการแข่งขัน');
+        }
+      }
+
+      function onSelectActivity() {
+        const selectedSchool = document.getElementById('selSchool').value;
+        const selectedSubject = document.getElementById('selSubject').value;
+        const selectedActivity = document.getElementById('selActivity').value;
+        resetSelect('selStudent', 'เลือกครู');
+        clearImagePreview(); // เคลียร์รูป
+        if (selectedActivity) {
+          const filtered = allData.filter(row => row[2] === selectedSchool && row[0] === selectedSubject && row[1] === selectedActivity);
+          const students = filtered.map(row => row[3]);
+          populateSelect('selStudent', students, 'เลือกครู');
+        }
+      }
+
+       // 🔥 ฟังก์ชันใหม่: โหลดรูปแบบ Force Load (แก้รูปไม่ขึ้น)
+      function onSelectStudent() {
+        const name = document.getElementById('selStudent').value;
+        const school = document.getElementById('selSchool').value;
+        const activity = document.getElementById('selActivity').value;
+        const subject = document.getElementById('selSubject').value;
+
+        clearImagePreview();
+
+        if (name) {
+          const foundRow = allData.find(row => row[2] === school && row[0] === subject && row[1] === activity && row[3] === name);
+          
+          if (foundRow) {
+            const savedImageUrl = foundRow[5]; // Column F
+            
+            if (savedImageUrl && savedImageUrl.includes('http')) {
+               // 1. ตั้งค่าพื้นฐานก่อน
+               document.getElementById('existingImageUrl').value = savedImageUrl;
+               document.getElementById('existingImgAlert').style.display = 'inline-block';
+               document.getElementById('existingImgAlert').innerHTML = '<span class="spinner-border spinner-border-sm"></span> กำลังโหลดรูป...';
+               document.getElementById('btnSubmit').disabled = false;
+
+               // 2. เรียกหลังบ้านให้ดึงรูปมาให้ (Bypass Permission)
+               google.script.run.withSuccessHandler(function(res) {
+                 if (res.status === 'success') {
+                   const imgPreview = document.getElementById('imgPreview');
+                   imgPreview.src = res.data;
+                   imgPreview.style.display = 'inline-block';
+                   document.getElementById('existingImgAlert').innerHTML = '<i class="bi bi-check-circle-fill"></i> พบรูปในระบบแล้ว';
+                 } else {
+                   document.getElementById('existingImgAlert').innerHTML = '<i class="bi bi-exclamation-triangle"></i> รูปมีปัญหา (โปรดอัปใหม่)';
+                   document.getElementById('existingImageUrl').value = ""; // เคลียร์ทิ้ง
+                 }
+               }).getImageBase64(savedImageUrl);
+               
+               return; 
+            }
+          }
+        }
+        document.getElementById('btnSubmit').disabled = true;
+      }
+
+      // --- Helper Functions ---
+      function populateSelect(elementId, items, placeholder) {
+        const select = document.getElementById(elementId);
+        select.innerHTML = `<option value="">-- ${placeholder} --</option>`;
+        items.forEach(item => { if(item) { let opt = document.createElement('option'); opt.value = item; opt.text = item; select.add(opt); } });
+        select.disabled = false;
+      }
+      function resetSelect(elementId, placeholder) {
+        const select = document.getElementById(elementId);
+        select.innerHTML = `<option value="">-- ${placeholder} --</option>`;
+        select.disabled = true;
+      }
+      function clearImagePreview() {
+        document.getElementById('imgPreview').style.display = 'none';
+        document.getElementById('imgPreview').src = "";
+        document.getElementById('photoFile').value = ""; // เคลียร์ไฟล์ที่เลือก
+        document.getElementById('existingImageUrl').value = "";
+        document.getElementById('existingImgAlert').style.display = 'none';
+        document.getElementById('btnSubmit').disabled = true;
+      }
+
+      // เมื่อ user เลือกไฟล์ใหม่
+      function previewNewImage() {
+        const file = document.getElementById('photoFile').files[0];
+        const preview = document.getElementById('imgPreview');
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            preview.src = e.target.result;
+            preview.style.display = 'inline-block';
+            document.getElementById('existingImgAlert').style.display = 'none'; // ซ่อนเตือนรูปเก่า เพราะเลือกรูปใหม่แล้ว
+            document.getElementById('existingImageUrl').value = ""; // เคลียร์ค่ารูปเก่า
+            document.getElementById('btnSubmit').disabled = false;
+          }
+          reader.readAsDataURL(file);
+        }
+      }
+
+      // --- Submit Form ---
+      function submitForm() {
+        const name = document.getElementById('selStudent').value;
+        const school = document.getElementById('selSchool').value;
+        const subject = document.getElementById('selSubject').value;
+        const activity = document.getElementById('selActivity').value;
+        const fileInput = document.getElementById('photoFile');
+        const existingUrl = document.getElementById('existingImageUrl').value;
+
+        // ต้องมีชื่อ และ (มีไฟล์ใหม่ หรือ มีลิงก์รูปเก่า)
+        if (!name || (!fileInput.files[0] && !existingUrl)) {
+          alert("กรุณาเลือกรูปภาพ");
+          return;
+        }
+
+        // หา Venue (สถานที่)
+        let venue = "";
+        const foundRow = allData.find(row => row[2] === school && row[0] === subject && row[1] === activity && row[3] === name);
+        if (foundRow) venue = foundRow[4];
+
+        document.getElementById('loadingOverlay').style.display = 'flex';
+
+        // กรณีใช้รูปเดิม (ไม่ต้องอ่านไฟล์)
+        if (!fileInput.files[0] && existingUrl) {
+           runProcess({
+             name: name, school: school, subject: subject, activity: activity, venue: venue,
+             existingImageUrl: existingUrl // ส่งลิงก์ไป
+           });
+           return;
+        }
+
+        // กรณีอัปรูปใหม่
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          runProcess({
+            name: name, school: school, subject: subject, activity: activity, venue: venue,
+            imageFile: { data: e.target.result, type: fileInput.files[0].type }
+          });
+        };
+        reader.readAsDataURL(fileInput.files[0]);
+      }
+
+      function runProcess(payload) {
+        google.script.run.withSuccessHandler(function(res) {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            if (res.status === 'success') {
+              document.getElementById('resultArea').style.display = 'block';
+              document.getElementById('downloadLink').href = res.url;
+              document.getElementById('resultArea').scrollIntoView({behavior: "smooth"});
+            } else {
+              alert('เกิดข้อผิดพลาด: ' + res.message);
+            }
+          }).processForm(payload);
+      }
+    </script>
+  </body>
 </html>
